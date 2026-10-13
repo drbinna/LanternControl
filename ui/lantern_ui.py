@@ -386,7 +386,6 @@ def build_snapshot():
         'cams': {n: {'label': c.label, 'live': c.live()}
                  for n, c in CAMS.items()},
         'recording': REC.status() if REC else {},
-        'rec_settings': dict(REC.settings) if REC else {},
         'controls': bool(UI_KEY),
         'events': events,
     }
@@ -397,7 +396,7 @@ def snapshot_loop():
         try:
             S.snapshot = build_snapshot()
             if REC:
-                REC.tick(bool(S.snapshot.get('armed')))
+                REC.tick()
         except Exception as e:  # never let the UI die on a bad message
             S.snapshot = {'verdict': 'UI ERROR: %s' % e, 'level': 'bad',
                           'checks': [], 'events': []}
@@ -618,12 +617,6 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 return self._send(400, {'error': str(e)})
             return self._send(200, {'ok': True})
-        if path == '/api/settings':
-            if not self._key_ok(req):
-                return self._send(403, {'error': 'wrong or missing access key'})
-            REC.set_settings(**{k: req[k] for k in ('auto_record', 'auto_cam')
-                                if k in req})
-            return self._send(200, {'ok': True, 'settings': REC.settings})
         if path != '/api/action':
             return self._send(404, {'error': 'not found'})
         action = req.get('action')

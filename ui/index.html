@@ -141,11 +141,6 @@ main{padding:16px 20px 28px;max-width:1500px;margin:0 auto}
 .recbtn.on::before{border-radius:2px;background:#fff}
 .recbtn:disabled{opacity:.4;cursor:not-allowed}
 .rtime{font-family:var(--mono);font-size:13px;color:#ffc9c9}
-.switch{display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none}
-.switch input{appearance:none;width:38px;height:22px;border-radius:99px;background:var(--panel2);border:1px solid var(--line);position:relative;cursor:pointer;margin:0}
-.switch input::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:var(--faint);transition:.2s}
-.switch input:checked{background:rgba(62,207,142,.25);border-color:rgba(62,207,142,.6)}
-.switch input:checked::after{left:18px;background:var(--ok)}
 .hint{color:var(--faint);font-size:12px;margin-top:8px}
 
 /* ---- recordings */
@@ -164,7 +159,6 @@ main{padding:16px 20px 28px;max-width:1500px;margin:0 auto}
 .ritem .m{color:var(--dim);font-family:var(--mono);font-size:12px}
 .ritem .acts{grid-row:span 2;display:flex;gap:6px;align-items:center}
 .badge{font-size:10px;letter-spacing:.08em;padding:2px 6px;border-radius:4px;background:rgba(255,255,255,.06);color:var(--dim);margin-left:6px;vertical-align:middle}
-.badge.auto{background:rgba(245,165,36,.14);color:#ffe0a8}
 .badge.proc{background:rgba(90,169,255,.14);color:var(--blue)}
 .chip{text-decoration:none}
 .stat-chip{display:none;align-items:center;gap:7px;font-size:11px;font-weight:700;letter-spacing:.1em;padding:5px 10px;border-radius:99px;
@@ -303,9 +297,8 @@ main{padding:16px 20px 28px;max-width:1500px;margin:0 auto}
         </div>
       </section>
       <section class="card">
-        <h2>Recording settings</h2>
-        <label class="switch"><input type="checkbox" id="autoRec"> Record the colour camera automatically on every flight</label>
-        <div class="hint">Starts when the drone arms, stops and saves when it disarms. Needs the access key (Flight → Controls).</div>
+        <h2>Recording</h2>
+        <div class="hint" style="margin-top:0">Nothing is recorded unless you press Record. Press Stop to save; recordings appear under Recordings.</div>
         <div class="msg" id="camMsg"></div>
       </section>
     </div>
@@ -563,10 +556,8 @@ function renderMedia(s){
     btn.classList.toggle('on', !!r);
     btn.textContent = r ? 'Stop' : 'Record';
     btn.disabled = !s.video;
-    $(rt).textContent = r ? fmtDur(r.elapsed) + (r.auto ? ' · auto' : '') : '';
+    $(rt).textContent = r ? fmtDur(r.elapsed) : '';
   });
-  const st = s.rec_settings || {};
-  if (document.activeElement !== $('autoRec')) $('autoRec').checked = !!st.auto_record;
   // refresh the list when a recording starts/stops
   const keys = names.join(',');
   if (keys !== lastRecKeys){ lastRecKeys = keys; if (view === 'recordings') setTimeout(loadRecordings, 600); }
@@ -588,10 +579,6 @@ document.querySelectorAll('.recbtn').forEach(btn => {
     btn.disabled = false;
   };
 });
-$('autoRec').onchange = async () => {
-  try { await post('/api/settings', {auto_record: $('autoRec').checked, key: keyVal()}); $('camMsg').textContent = 'Saved.'; }
-  catch(e){ $('autoRec').checked = !$('autoRec').checked; $('camMsg').textContent = e.message + (keyVal() ? '' : ' — enter the access key under Flight → Controls.'); }
-};
 
 // ---- recordings list + player
 let selected = null, pollTimer = null;
@@ -607,7 +594,7 @@ async function loadRecordings(){
     const busy = r.status !== 'ready';
     const badge = r.status === 'recording' ? '<span class="badge proc">RECORDING</span>' : r.status === 'processing' ? '<span class="badge proc">PROCESSING</span>' : '';
     return `<div class="ritem ${selected === r.name ? 'sel' : ''}" data-name="${r.name}" data-url="${r.url}" data-play="${r.playable && !busy ? 1 : 0}">
-      <div class="t">${r.label || r.cam} camera${r.auto ? '<span class="badge auto">AUTO</span>' : ''}${badge}</div>
+      <div class="t">${r.label || r.cam} camera${badge}</div>
       <div class="acts">
         ${busy ? '' : `<a class="chip" href="${r.url}?download=1" onclick="event.stopPropagation()">Download</a>`}
         ${r.status === 'recording' ? '' : `<button class="chip danger" data-del="${r.name}">Delete</button>`}

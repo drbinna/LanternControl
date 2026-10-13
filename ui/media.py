@@ -3,6 +3,9 @@
 Cameras are only subscribed while someone is watching or recording, so an
 idle dashboard costs the Jetson nothing.
 
+Recording is manual only: it starts when the operator presses Record and
+stops when they press Stop (or a safety limit is hit).
+
 Recordings are written as MJPEG .avi (cheap and crash-tolerant) with a
 telemetry overlay burned in. When a recording stops, ffmpeg converts it in
 the background (lowest CPU priority) to an H.264 .mp4 that plays in any
@@ -26,7 +29,6 @@ except ImportError:  # dashboard still works, just without video
 DATA = Path(os.environ.get('LANTERN_DATA',
                            str(Path.home() / 'lantern' / 'data')))
 REC_DIR = DATA / 'recordings'
-SETTINGS_FILE = DATA / 'settings.json'
 REC_FPS = 15
 MIN_FREE_GB = 1.0        # refuse to start below this
 STOP_FREE_GB = 0.5       # stop a running recording below this
@@ -69,8 +71,8 @@ def draw_overlay(img, text):
 
 
 class Recording:
-    def __init__(self, cam, auto):
-        self.cam, self.auto = cam, auto
+    def __init__(self, cam):
+        self.cam = cam
         self.start = time.time()
         self.t0 = time.monotonic()
         self.name = '%s-%s' % (time.strftime('%Y%m%d-%H%M%S',
@@ -154,14 +156,7 @@ class Recorder:
         self.cams = cams
         self.event = event
         self.lock = threading.Lock()
-        self.auto_active = set()
-        self.was_armed = False
         REC_DIR.mkdir(parents=True, exist_ok=True)
-        self.settings = {'auto_record': True, 'auto_cam': 'color'}
-        try:
-            self.settings.update(json.loads(SETTINGS_FILE.read_text()))
-        except (OSError, ValueError):
-            pass
         self.recover()
 
     # ---------------------------------------------------------------- meta
@@ -184,7 +179,7 @@ class Recorder:
         return shutil.disk_usage(REC_DIR).free / 1e9
 
     # ------------------------------------------------------------ control
-    def start(self, cam_name, auto=False):
+    def start(self, cam_name):
         cam = self.cams.get(cam_name)
         if cam is None:
             raise ValueError('unknown camera')
@@ -196,13 +191,12 @@ class Recorder:
             if self.free_gb() < MIN_FREE_GB:
                 raise RuntimeError('disk almost full (%.1f GB free)'
                                    % self.free_gb())
-            rec = Recording(cam_name, auto)
+            rec = Recording(cam_name)
             self._write_meta(rec.name, cam=cam_name, label=cam.label,
-                             start=rec.start, auto=auto, status='recording',
+                             start=rec.start, status='recording',
                              file=rec.avi.name, duration=0, frames=0)
             cam.rec = rec
-        self.event('Recording %s camera%s' % (cam.label.lower(),
-                                              ' (auto)' if auto else ''), 'warn')
+        self.event('Recording %s camera' % cam.label.lower(), 'warn')
         return rec.name
 
     def stop(self, cam_name, why=''):
@@ -211,7 +205,6 @@ class Recorder:
             raise ValueError('unknown camera')
         with self.lock:
             rec, cam.rec = cam.rec, None
-            self.auto_active.discard(cam_name)
         if rec is None:
             return None
         frames, dur = rec.close()
@@ -282,29 +275,9 @@ class Recorder:
         for ext in ('.json', '.avi', '.mp4', '.tmp'):
             (REC_DIR / (name + ext)).unlink(missing_ok=True)
 
-    def set_settings(self, **kw):
-        if 'auto_record' in kw:
-            self.settings['auto_record'] = bool(kw['auto_record'])
-        if kw.get('auto_cam') in self.cams:
-            self.settings['auto_cam'] = kw['auto_cam']
-        SETTINGS_FILE.write_text(json.dumps(self.settings))
-
     # --------------------------------------------------------- housekeeping
-    def tick(self, armed):
-        """Called a few times a second: auto-record, limits, dead cameras."""
-        if armed and not self.was_armed and self.settings['auto_record']:
-            cam = self.settings.get('auto_cam', 'color')
-            try:
-                if self.cams[cam].rec is None:
-                    self.start(cam, auto=True)
-                    self.auto_active.add(cam)
-            except Exception as e:
-                self.event('Auto-record failed: %s' % e, 'bad')
-        if self.was_armed and not armed:
-            for cam in list(self.auto_active):
-                self.stop(cam, 'disarmed')
-        self.was_armed = armed
-
+    def tick(self):
+        """Called a few times a second: safety limits and dead cameras."""
         free = None
         for cam in self.cams.values():
             rec = cam.rec
@@ -313,9 +286,12 @@ class Recorder:
             if free is None:
                 free = self.free_gb()
             if rec.elapsed() > MAX_REC_S:
-                self.stop(cam.name, '30 min limit')
-                if armed:
-                    self.start(cam.name, auto=rec.auto)   # roll to a new file
+                # keep the operator's recording going in a fresh file
+                self.stop(cam.name, '30 min limit, continuing in a new file')
+                try:
+                    self.start(cam.name)
+                except Exception as e:
+                    self.event('Recording stopped: %s' % e, 'bad')
             elif free < STOP_FREE_GB:
                 self.stop(cam.name, 'disk full')
             elif rec.frames == 0 and rec.elapsed() > NO_FRAMES_S:
@@ -338,5 +314,5 @@ class Recorder:
 
     def status(self):
         return {name: {'name': c.rec.name, 'elapsed': round(c.rec.elapsed()),
-                       'frames': c.rec.frames, 'auto': c.rec.auto}
+                       'frames': c.rec.frames}
                 for name, c in self.cams.items() if c.rec is not None}

@@ -69,7 +69,7 @@ The dashboard has three screens: **Flight**, **Cameras** and **Recordings**.
 
 - **Cameras** shows the D455 colour camera (640×360, 15 fps) next to the infrared camera that the tracking uses. Each camera is only streamed while someone is watching or recording it.
 - **Record** saves a video with time, mode, armed state, height and vision state written into the top of the picture.
-- **Auto-record** (on by default) records the colour camera from arm to disarm on every flight. It needs the access key to switch on or off.
+- Recording is **manual only**: nothing is recorded unless you press Record, and it saves when you press Stop.
 - Recordings are stored in `~/lantern/data/recordings/`. Each file is limited to 30 minutes, recording stops if the disk gets low, and a recording cut off by a crash or power loss is finished on the next boot.
 - Each recording is saved as MJPEG first, then converted to H.264 MP4 in the background so it plays in any browser. Deleting a recording needs the access key.
 - To turn the colour camera off: `ros2 launch ... color:=false`.
