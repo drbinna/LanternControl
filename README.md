@@ -87,7 +87,7 @@ Publishing resumes after about 0.5 s of clean tracking, with `reset_counter` inc
 | `UXRCE_DDS_AG_IP` | -1062731775 | agent at 192.168.0.1 |
 | `UXRCE_DDS_PRT` | 8888 | |
 | `COM_POSCTL_NAVL` | 0 | fall back to Altitude when position is lost |
-| `MPC_VEL_MANUAL` | 2.0 | indoor speed cap (must stay under the watchdog's 4 m/s) |
+| `MPC_VEL_MANUAL` | 3.0 (PX4 1.15 minimum; QGC shows 6.7 mph) | indoor speed cap, stays under the watchdog's 4 m/s |
 | `EKF2_EV_POS_X/Y/Z` | TBD | camera offset from the Pixhawk, in metres |
 
 ## Network
