@@ -1,7 +1,7 @@
 [Unit]
 Description=Lantern vision (D455 + Isaac VSLAM + PX4 bridge/watchdog)
 After=network-online.target microxrceagent.service
-Wants=network-online.target
+Wants=network-online.target microxrceagent.service
 
 [Service]
 User=lantern
@@ -11,6 +11,7 @@ ExecStart=/bin/bash -c 'source /opt/ros/humble/setup.bash && source /home/lanter
 Restart=always
 RestartSec=5
 KillSignal=SIGINT
+TimeoutStopSec=15
 
 [Install]
 WantedBy=multi-user.target
