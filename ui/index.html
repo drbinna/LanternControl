@@ -112,6 +112,70 @@ main{padding:16px 20px 28px;max-width:1500px;margin:0 auto}
 .flags{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
 .flag{font-family:var(--mono);font-size:11px;padding:3px 8px;border-radius:5px;background:var(--panel2);color:var(--faint)}
 .flag.on{background:rgba(62,207,142,.14);color:var(--ok)}
+
+/* ---- navigation */
+.tabs{display:flex;gap:4px;margin-left:18px;background:var(--panel);border:1px solid var(--line);border-radius:9px;padding:3px}
+.tabs a{color:var(--dim);text-decoration:none;font-size:13px;font-weight:600;padding:6px 12px;border-radius:6px}
+.tabs a:hover{color:var(--text)}
+.tabs a.on{background:var(--panel2);color:#ffe0a8;box-shadow:inset 0 0 0 1px rgba(245,165,36,.35)}
+.view{display:none}.view.on{display:block}
+.rec{display:none;align-items:center;gap:7px;font-family:var(--mono);font-size:12px;color:#ffc9c9;
+  background:rgba(255,93,93,.12);border:1px solid rgba(255,93,93,.45);padding:4px 10px;border-radius:99px}
+.rec.on{display:flex}
+.rec i{width:8px;height:8px;border-radius:50%;background:var(--bad);animation:blink 1s steps(2) infinite}
+@keyframes blink{50%{opacity:.2}}
+@media (max-width:860px){header{flex-wrap:wrap}.tabs{order:9;width:100%;margin:8px 0 0}.tabs a{flex:1;text-align:center}}
+
+/* ---- cameras */
+.cams{display:grid;gap:16px;grid-template-columns:minmax(0,1.6fr) minmax(0,1fr);margin-top:16px}
+@media (max-width:1000px){.cams{grid-template-columns:1fr}}
+.cam .video{aspect-ratio:16/9}
+.cam .video img{display:block}
+.cam .bar2{display:flex;align-items:center;gap:10px;margin-top:12px;flex-wrap:wrap}
+.live{font-size:10px;letter-spacing:.14em;padding:3px 8px;border-radius:4px;background:rgba(255,255,255,.06);color:var(--faint)}
+.live.on{background:rgba(62,207,142,.15);color:var(--ok)}
+.recbtn{font:inherit;font-weight:700;font-size:13px;padding:9px 16px;border-radius:8px;cursor:pointer;display:flex;align-items:center;gap:8px;
+  border:1px solid rgba(255,93,93,.5);background:rgba(255,93,93,.1);color:#ffc9c9}
+.recbtn::before{content:"";width:10px;height:10px;border-radius:50%;background:var(--bad)}
+.recbtn.on{background:var(--bad);color:#fff;border-color:var(--bad)}
+.recbtn.on::before{border-radius:2px;background:#fff}
+.recbtn:disabled{opacity:.4;cursor:not-allowed}
+.rtime{font-family:var(--mono);font-size:13px;color:#ffc9c9}
+.switch{display:flex;align-items:center;gap:10px;cursor:pointer;user-select:none}
+.switch input{appearance:none;width:38px;height:22px;border-radius:99px;background:var(--panel2);border:1px solid var(--line);position:relative;cursor:pointer;margin:0}
+.switch input::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:var(--faint);transition:.2s}
+.switch input:checked{background:rgba(62,207,142,.25);border-color:rgba(62,207,142,.6)}
+.switch input:checked::after{left:18px;background:var(--ok)}
+.hint{color:var(--faint);font-size:12px;margin-top:8px}
+
+/* ---- recordings */
+.player{background:#07080a;border-radius:8px;overflow:hidden;aspect-ratio:16/9;display:grid;place-items:center}
+.player video{width:100%;height:100%;display:none;background:#000}
+.player .ph{color:var(--faint);font-size:13px}
+.ptitle{margin-top:10px;font-family:var(--mono);font-size:12px;color:var(--dim);min-height:16px}
+.rgrid{display:grid;gap:16px;grid-template-columns:minmax(0,1.5fr) minmax(0,1fr);margin-top:16px}
+@media (max-width:1000px){.rgrid{grid-template-columns:1fr}}
+.rlist{display:flex;flex-direction:column;max-height:560px;overflow:auto}
+.ritem{display:grid;grid-template-columns:1fr auto;gap:4px 10px;padding:10px 8px;border-top:1px solid var(--line);border-radius:6px;cursor:pointer}
+.ritem:first-child{border-top:0}
+.ritem:hover{background:var(--panel2)}
+.ritem.sel{background:var(--panel2);box-shadow:inset 3px 0 0 var(--amber)}
+.ritem .t{font-weight:600}
+.ritem .m{color:var(--dim);font-family:var(--mono);font-size:12px}
+.ritem .acts{grid-row:span 2;display:flex;gap:6px;align-items:center}
+.badge{font-size:10px;letter-spacing:.08em;padding:2px 6px;border-radius:4px;background:rgba(255,255,255,.06);color:var(--dim);margin-left:6px;vertical-align:middle}
+.badge.auto{background:rgba(245,165,36,.14);color:#ffe0a8}
+.badge.proc{background:rgba(90,169,255,.14);color:var(--blue)}
+.chip{text-decoration:none}
+.stat-chip{display:none;align-items:center;gap:7px;font-size:11px;font-weight:700;letter-spacing:.1em;padding:5px 10px;border-radius:99px;
+  border:1px solid var(--line);background:var(--panel);color:var(--dim);text-decoration:none}
+.stat-chip.show{display:flex}
+.stat-chip i{width:8px;height:8px;border-radius:50%;background:var(--faint)}
+.stat-chip.ok{color:#b9f5d9;border-color:rgba(62,207,142,.45)}.stat-chip.ok i{background:var(--ok)}
+.stat-chip.bad{color:#ffc9c9;border-color:rgba(255,93,93,.5)}.stat-chip.bad i{background:var(--bad)}
+.stat-chip.fly{color:#ffe0a8;border-color:rgba(245,165,36,.55)}.stat-chip.fly i{background:var(--amber)}
+.stat-chip.lost{animation:pulse 1s infinite}
+.chip.danger:hover{border-color:var(--bad);color:#ffc9c9}
 </style>
 </head>
 <body>
@@ -127,12 +191,20 @@ main{padding:16px 20px 28px;max-width:1500px;margin:0 auto}
     LANTERN
   </div>
   <div class="sub">X650 · Vision Positioning</div>
+  <nav class="tabs">
+    <a href="#flight" data-view="flight">Flight</a>
+    <a href="#cameras" data-view="cameras">Cameras</a>
+    <a href="#recordings" data-view="recordings">Recordings</a>
+  </nav>
   <div class="spacer"></div>
+  <a class="stat-chip" id="statChip" href="#flight"><i></i><span id="statTxt"></span></a>
+  <div class="rec" id="recInd"><i></i><span id="recTxt">REC</span></div>
   <div class="link"><span class="dot" id="linkDot"></span><span id="linkTxt">Connecting…</span></div>
   <div class="clock" id="clock">--:--:--</div>
 </header>
 
 <main>
+<section class="view on" id="view-flight">
   <div class="banner" id="banner"><span class="txt" id="verdict">Waiting for Jetson…</span><span class="pill" id="modePill">—</span></div>
 
   <div class="grid">
@@ -208,6 +280,53 @@ main{padding:16px 20px 28px;max-width:1500px;margin:0 auto}
       <div class="msg" id="ctrlMsg"></div>
     </section>
   </div>
+</section>
+
+<!-- ============================================================ CAMERAS -->
+<section class="view" id="view-cameras">
+  <div class="cams">
+    <section class="card cam">
+      <h2>Colour camera <span class="r"><span class="live" id="liveColor">NO SIGNAL</span></span></h2>
+      <div class="video"><img id="camColor" alt="Colour camera"><div class="ph" id="phColor">Connecting…</div><span class="tag">D455 RGB</span></div>
+      <div class="bar2">
+        <button class="recbtn" data-cam="color">Record</button>
+        <span class="rtime" id="rtColor"></span>
+      </div>
+    </section>
+    <div class="stack">
+      <section class="card cam">
+        <h2>Infrared · tracking view <span class="r"><span class="live" id="liveIr">NO SIGNAL</span></span></h2>
+        <div class="video"><img id="camIr" alt="Infrared camera"><div class="ph" id="phIr">Connecting…</div><span class="tag">D455 IR</span></div>
+        <div class="bar2">
+          <button class="recbtn" data-cam="ir">Record</button>
+          <span class="rtime" id="rtIr"></span>
+        </div>
+      </section>
+      <section class="card">
+        <h2>Recording settings</h2>
+        <label class="switch"><input type="checkbox" id="autoRec"> Record the colour camera automatically on every flight</label>
+        <div class="hint">Starts when the drone arms, stops and saves when it disarms. Needs the access key (Flight → Controls).</div>
+        <div class="msg" id="camMsg"></div>
+      </section>
+    </div>
+  </div>
+</section>
+
+<!-- ========================================================= RECORDINGS -->
+<section class="view" id="view-recordings">
+  <div class="rgrid">
+    <section class="card">
+      <h2>Player <span class="r" id="pInfo"></span></h2>
+      <div class="player"><video id="player" controls playsinline preload="metadata"></video><div class="ph" id="playerPh">Pick a recording</div></div>
+      <div class="ptitle" id="pTitle"></div>
+    </section>
+    <section class="card">
+      <h2>Recordings <span class="r" id="diskTxt"></span></h2>
+      <div class="rlist" id="rlist"><div class="empty">No recordings yet</div></div>
+      <div class="msg" id="recMsg"></div>
+    </section>
+  </div>
+</section>
 </main>
 
 <script>
@@ -289,6 +408,7 @@ function render(s){
   }
   if (s.vision_pos) pushTrail(trailVis, [s.vision_pos[0], s.vision_pos[1]]);
   drawMap();
+  renderMedia(s);
 }
 
 // ---- map
@@ -368,7 +488,7 @@ let vidOn = false;
 $('vidToggle').onclick = () => {
   vidOn = !vidOn;
   const img = $('vid');
-  if (vidOn){ img.src = '/video.mjpg?' + Date.now(); img.style.display='block'; $('vidPh').style.display='none'; $('vidToggle').textContent='Hide feed'; }
+  if (vidOn){ img.src = '/video.mjpg?cam=ir&t=' + Date.now(); img.style.display='block'; $('vidPh').style.display='none'; $('vidToggle').textContent='Hide feed'; }
   else { img.removeAttribute('src'); img.style.display='none'; $('vidPh').style.display='block'; $('vidToggle').textContent='Show feed'; }
 };
 
@@ -394,6 +514,129 @@ document.querySelectorAll('.btn[data-action]').forEach(btn => {
     setTimeout(() => { m.dataset.sticky = ''; }, 6000);
   };
 });
+
+// ================================================================ views
+let view = 'flight';
+function showView(v){
+  if (!['flight','cameras','recordings'].includes(v)) v = 'flight';
+  view = v;
+  document.querySelectorAll('.view').forEach(e => e.classList.toggle('on', e.id === 'view-' + v));
+  document.querySelectorAll('.tabs a').forEach(a => a.classList.toggle('on', a.dataset.view === v));
+  camStreams(v === 'cameras');
+  if (v === 'recordings') loadRecordings();
+  if (v === 'flight') setTimeout(drawMap, 0);
+}
+window.addEventListener('hashchange', () => showView(location.hash.slice(1)));
+showView(location.hash.slice(1) || 'flight');
+
+// ---- live camera streams (only while the Cameras screen is open)
+function camStreams(on){
+  [['color','camColor','phColor'],['ir','camIr','phIr']].forEach(([cam, img, ph]) => {
+    if (on){ $(img).src = '/video.mjpg?cam=' + cam + '&t=' + Date.now(); }
+    else { $(img).removeAttribute('src'); }
+  });
+}
+['camColor','camIr'].forEach(id => {
+  $(id).addEventListener('load', () => { $(id).style.display='block'; $(id === 'camColor' ? 'phColor' : 'phIr').style.display='none'; });
+  $(id).addEventListener('error', () => { $(id).style.display='none'; const ph = $(id === 'camColor' ? 'phColor' : 'phIr'); ph.style.display='block'; ph.textContent='No video'; });
+});
+
+const fmtDur = sec => { sec = Math.round(sec||0); const m = Math.floor(sec/60), s2 = sec%60; return m + ':' + String(s2).padStart(2,'0'); };
+let lastRecKeys = '';
+function renderMedia(s){
+  const rec = s.recording || {}, cams = s.cams || {};
+  // compact flight status on the other screens
+  const chip = $('statChip');
+  chip.className = 'stat-chip ' + (s.level || '') + (view !== 'flight' ? ' show' : '');
+  $('statTxt').textContent = (s.verdict || '').split(' · ')[0] || '—';
+  // header REC indicator
+  const names = Object.keys(rec);
+  $('recInd').classList.toggle('on', names.length > 0);
+  if (names.length) $('recTxt').textContent = 'REC ' + names.map(n => (n === 'ir' ? 'IR' : 'RGB') + ' ' + fmtDur(rec[n].elapsed)).join(' · ');
+  // camera status + record buttons
+  [['color','liveColor','rtColor'],['ir','liveIr','rtIr']].forEach(([cam, live, rt]) => {
+    const c = cams[cam] || {};
+    $(live).className = 'live' + (c.live ? ' on' : '');
+    $(live).textContent = c.live ? 'LIVE' : (view === 'cameras' ? 'NO SIGNAL' : 'IDLE');
+    const btn = document.querySelector('.recbtn[data-cam="' + cam + '"]');
+    const r = rec[cam];
+    btn.classList.toggle('on', !!r);
+    btn.textContent = r ? 'Stop' : 'Record';
+    btn.disabled = !s.video;
+    $(rt).textContent = r ? fmtDur(r.elapsed) + (r.auto ? ' · auto' : '') : '';
+  });
+  const st = s.rec_settings || {};
+  if (document.activeElement !== $('autoRec')) $('autoRec').checked = !!st.auto_record;
+  // refresh the list when a recording starts/stops
+  const keys = names.join(',');
+  if (keys !== lastRecKeys){ lastRecKeys = keys; if (view === 'recordings') setTimeout(loadRecordings, 600); }
+}
+
+const keyVal = () => $('key').value;
+async function post(url, body){
+  const r = await fetch(url, {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(body)});
+  let j = {}; try { j = await r.json(); } catch(e){}
+  if (!r.ok) throw new Error(j.error || ('HTTP ' + r.status));
+  return j;
+}
+document.querySelectorAll('.recbtn').forEach(btn => {
+  btn.onclick = async () => {
+    const cam = btn.dataset.cam, on = btn.classList.contains('on');
+    btn.disabled = true;
+    try { await post('/api/record', {cam, action: on ? 'stop' : 'start'}); $('camMsg').textContent = on ? 'Saved — find it under Recordings.' : ''; }
+    catch(e){ $('camMsg').textContent = e.message; }
+    btn.disabled = false;
+  };
+});
+$('autoRec').onchange = async () => {
+  try { await post('/api/settings', {auto_record: $('autoRec').checked, key: keyVal()}); $('camMsg').textContent = 'Saved.'; }
+  catch(e){ $('autoRec').checked = !$('autoRec').checked; $('camMsg').textContent = e.message + (keyVal() ? '' : ' — enter the access key under Flight → Controls.'); }
+};
+
+// ---- recordings list + player
+let selected = null, pollTimer = null;
+async function loadRecordings(){
+  let j;
+  try { j = await (await fetch('/api/recordings')).json(); } catch(e){ return; }
+  const list = j.recordings || [];
+  $('diskTxt').textContent = j.free_gb != null ? j.free_gb + ' GB free' : '';
+  if (!list.length){ $('rlist').innerHTML = '<div class="empty">No recordings yet. Start one from Cameras.</div>'; return; }
+  $('rlist').innerHTML = list.map(r => {
+    const d = new Date(r.start * 1000);
+    const when = d.toLocaleDateString([], {month:'short', day:'numeric'}) + ' · ' + d.toLocaleTimeString([], {hour:'2-digit', minute:'2-digit', second:'2-digit', hour12:false});
+    const busy = r.status !== 'ready';
+    const badge = r.status === 'recording' ? '<span class="badge proc">RECORDING</span>' : r.status === 'processing' ? '<span class="badge proc">PROCESSING</span>' : '';
+    return `<div class="ritem ${selected === r.name ? 'sel' : ''}" data-name="${r.name}" data-url="${r.url}" data-play="${r.playable && !busy ? 1 : 0}">
+      <div class="t">${r.label || r.cam} camera${r.auto ? '<span class="badge auto">AUTO</span>' : ''}${badge}</div>
+      <div class="acts">
+        ${busy ? '' : `<a class="chip" href="${r.url}?download=1" onclick="event.stopPropagation()">Download</a>`}
+        ${r.status === 'recording' ? '' : `<button class="chip danger" data-del="${r.name}">Delete</button>`}
+      </div>
+      <div class="m">${when} · ${fmtDur(r.duration)} · ${r.size_mb >= 1 ? r.size_mb + ' MB' : '< 1 MB'}${r.note ? ' · ' + r.note : ''}</div>
+    </div>`;
+  }).join('');
+  clearTimeout(pollTimer);
+  if (list.some(r => r.status !== 'ready') && view === 'recordings') pollTimer = setTimeout(loadRecordings, 2000);
+}
+$('rlist').addEventListener('click', async e => {
+  const del = e.target.closest('[data-del]');
+  if (del){
+    e.stopPropagation();
+    if (del.dataset.armed !== '1'){ del.dataset.armed = '1'; del.textContent = 'Confirm'; setTimeout(() => { del.dataset.armed=''; del.textContent='Delete'; }, 3000); return; }
+    try { await post('/api/recordings/delete', {name: del.dataset.del, key: keyVal()}); if (selected === del.dataset.del) clearPlayer(); $('recMsg').textContent = 'Deleted.'; loadRecordings(); }
+    catch(err){ $('recMsg').textContent = err.message + (keyVal() ? '' : ' — enter the access key under Flight → Controls.'); }
+    return;
+  }
+  const item = e.target.closest('.ritem');
+  if (!item) return;
+  if (item.dataset.play !== '1'){ $('recMsg').textContent = 'Still processing, or not playable in the browser — use Download.'; return; }
+  selected = item.dataset.name;
+  document.querySelectorAll('.ritem').forEach(x => x.classList.toggle('sel', x === item));
+  const v = $('player'); v.src = item.dataset.url; v.style.display = 'block'; $('playerPh').style.display = 'none';
+  $('pTitle').textContent = item.querySelector('.t').textContent + ' · ' + item.querySelector('.m').textContent;
+  v.play().catch(() => {});
+});
+function clearPlayer(){ const v = $('player'); v.pause(); v.removeAttribute('src'); v.load(); v.style.display='none'; $('playerPh').style.display='block'; $('pTitle').textContent=''; selected = null; }
 </script>
 </body>
 </html>

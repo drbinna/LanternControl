@@ -14,13 +14,19 @@ import json
 import math
 import os
 import random
+import re
 import subprocess
+import sys
 import threading
+from urllib.parse import parse_qs, urlparse
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE))
+import media  # noqa: E402
+
 PIXHAWK_IP = os.environ.get('LANTERN_PIXHAWK_IP', '192.168.0.3')
 CAMERA_USB = '8086:0b5c'
 SERVICES = {'agent': 'microxrceagent', 'vision': 'lantern-vision'}
@@ -78,10 +84,6 @@ class State:
         self.health = {'camera': None, 'pixhawk': None, 'agent': None,
                        'vision': None, 'temp_c': None, 'load': None,
                        'mem_pct': None}
-        self.frame = None
-        self.frame_id = 0
-        self.viewers = 0
-        self.video_available = False
         self.events = collections.deque(maxlen=40)
         self.snapshot = {}
         self.wd = {}
@@ -94,6 +96,29 @@ class State:
 
 
 S = State()
+
+CAMS = {
+    'color': media.Camera('color', 'Colour', '/camera/camera/color/image_raw',
+                          view_fps=15),
+    'ir': media.Camera('ir', 'Infrared', '/camera/camera/infra1/image_rect_raw',
+                       view_fps=10),
+}
+REC = None   # media.Recorder, created in main()
+
+
+def overlay_text():
+    """Telemetry burned into recordings."""
+    s = S.snapshot or {}
+    lp = s.get('lpos') or {}
+    h = ('H %.2fm' % -lp['z']) if 'z' in lp else 'H --'
+    wd = (s.get('watchdog') or {}).get('state', '--')
+    return '%s  %s  %s  %s  VISION %s' % (
+        time.strftime('%Y-%m-%d %H:%M:%S'), s.get('mode', '--').upper(),
+        'ARMED' if s.get('armed') else 'DISARMED', h, wd)
+
+
+for _c in CAMS.values():
+    _c.overlay = overlay_text
 
 
 # --------------------------------------------------------------------- ROS
@@ -109,13 +134,6 @@ def start_ros():
     qos = QoSProfile(reliability=ReliabilityPolicy.BEST_EFFORT,
                      durability=DurabilityPolicy.VOLATILE,
                      history=HistoryPolicy.KEEP_LAST, depth=5)
-
-    try:
-        import cv2
-        import numpy as np
-        S.video_available = True
-    except ImportError:
-        cv2 = np = None
 
     rclpy.init()
     node = Node('lantern_ui')
@@ -214,37 +232,21 @@ def start_ros():
     except ImportError:
         pass
 
-    # Camera feed: only subscribe while someone is watching (saves CPU).
-    img = {'sub': None, 'last': 0.0}
-
-    def on_image(msg):
-        now = time.monotonic()
-        if now - img['last'] < 0.1:          # ~10 fps to the browser
-            return
-        img['last'] = now
-        try:
-            a = np.frombuffer(msg.data, dtype=np.uint8)
-            a = a.reshape(msg.height, msg.step)[:, :msg.width]
-            ok, jpg = cv2.imencode('.jpg', a, [cv2.IMWRITE_JPEG_QUALITY, 70])
-            if ok:
-                with S.lock:
-                    S.frame = jpg.tobytes()
-                    S.frame_id += 1
-        except Exception:
-            pass
+    # Cameras: subscribed only while someone is watching or recording.
+    subs = {}
 
     def manage_video():
-        if not S.video_available:
+        if not media.available():
             return
-        with S.lock:
-            want = S.viewers > 0
-        if want and img['sub'] is None:
-            img['sub'] = node.create_subscription(
-                Image, '/camera/camera/infra1/image_rect_raw', on_image, qos)
-        elif not want and img['sub'] is not None:
-            node.destroy_subscription(img['sub'])
-            img['sub'] = None
-    node.create_timer(1.0, manage_video)
+        for cam in CAMS.values():
+            want = cam.wanted()
+            if want and cam.name not in subs:
+                subs[cam.name] = node.create_subscription(
+                    Image, cam.topic,
+                    lambda m, c=cam: c.on_frame(lambda: media.to_array(m)), qos)
+            elif not want and cam.name in subs:
+                node.destroy_subscription(subs.pop(cam.name))
+    node.create_timer(0.5, manage_video)
 
     threading.Thread(target=rclpy.spin, args=(node,), daemon=True).start()
 
@@ -380,7 +382,11 @@ def build_snapshot():
         'mode': NAV_STATES.get(status.get('nav_state'), '—') if status else '—',
         'battery': batt,
         'jetson': {k: h[k] for k in ('temp_c', 'load', 'mem_pct')},
-        'video': S.video_available,
+        'video': media.available(),
+        'cams': {n: {'label': c.label, 'live': c.live()}
+                 for n, c in CAMS.items()},
+        'recording': REC.status() if REC else {},
+        'rec_settings': dict(REC.settings) if REC else {},
         'controls': bool(UI_KEY),
         'events': events,
     }
@@ -390,6 +396,8 @@ def snapshot_loop():
     while True:
         try:
             S.snapshot = build_snapshot()
+            if REC:
+                REC.tick(bool(S.snapshot.get('armed')))
         except Exception as e:  # never let the UI die on a bad message
             S.snapshot = {'verdict': 'UI ERROR: %s' % e, 'level': 'bad',
                           'checks': [], 'events': []}
@@ -399,8 +407,9 @@ def snapshot_loop():
 # ------------------------------------------------------------------- demo
 def demo_loop():
     """Synthetic data so the UI can be previewed without a drone."""
-    S.video_available = False
     t0 = time.time()
+    threading.Thread(target=demo_cams, daemon=True).start()
+    arm_cycle = os.environ.get('LANTERN_DEMO_ARMCYCLE')
     with S.lock:
         S.event('Demo mode: synthetic data', 'warn')
     while True:
@@ -424,7 +433,8 @@ def demo_loop():
                        'cs_tilt_align': True, 'cs_yaw_align': False,
                        'cs_in_air': True}
             S.status_t = time.monotonic()
-            S.status = {'armed': False, 'nav_state': 2}
+            armed = bool(arm_cycle) and int(t // float(arm_cycle)) % 2 == 1
+            S.status = {'armed': armed, 'nav_state': 2 if armed else 1}
             S.battery_t = time.monotonic()
             S.battery = {'v': 15.6, 'pct': 82.0}
             S.wd_t = time.monotonic()
@@ -433,6 +443,29 @@ def demo_loop():
             S.health.update(camera=True, pixhawk=True, agent=True,
                             vision=True, temp_c=48.5, load=2.1, mem_pct=41.0)
         time.sleep(0.1)
+
+
+def demo_cams():
+    """Synthetic camera frames for demo mode."""
+    if not media.available():
+        return
+    np, cv2 = media.np, media.cv2
+    yy, xx = np.mgrid[0:360, 0:640]
+    n = 0
+    while True:
+        n += 1
+        t = time.time()
+        col = np.zeros((360, 640, 3), np.uint8)
+        col[..., 0] = (xx * 255 // 640).astype(np.uint8)
+        col[..., 1] = ((yy + n * 3) % 360 * 255 // 360).astype(np.uint8)
+        col[..., 2] = 120
+        cx = int(320 + 200 * math.sin(t))
+        cv2.circle(col, (cx, 180), 40, (36, 165, 245), -1)
+        ir = cv2.cvtColor(col, cv2.COLOR_BGR2GRAY)
+        CAMS['color'].on_frame(lambda: col)
+        if n % 2 == 0:
+            CAMS['ir'].on_frame(lambda: ir)
+        time.sleep(1 / 30)
 
 
 # ------------------------------------------------------------------- HTTP
@@ -464,8 +497,62 @@ class Handler(BaseHTTPRequestHandler):
         if path == '/events':
             return self._sse()
         if path == '/video.mjpg':
-            return self._mjpeg()
+            q = parse_qs(urlparse(self.path).query)
+            return self._mjpeg(q.get('cam', ['ir'])[0])
+        if path == '/api/recordings':
+            return self._send(200, {'recordings': REC.list() if REC else [],
+                                    'free_gb': round(REC.free_gb(), 1)
+                                    if REC else None})
+        if path.startswith('/media/'):
+            return self._file(path[len('/media/'):])
         self._send(404, {'error': 'not found'})
+
+    def _file(self, name):
+        if not re.match(r'^\d{8}-\d{6}-[a-z]+\.(mp4|avi)$', name):
+            return self._send(404, {'error': 'not found'})
+        f = media.REC_DIR / name
+        if not f.is_file():
+            return self._send(404, {'error': 'not found'})
+        size = f.stat().st_size
+        start, end, code = 0, size - 1, 200
+        m = re.match(r'bytes=(\d*)-(\d*)', self.headers.get('Range', ''))
+        if m and (m.group(1) or m.group(2)):
+            if m.group(1):
+                start = int(m.group(1))
+                end = int(m.group(2)) if m.group(2) else size - 1
+            else:
+                start = max(0, size - int(m.group(2)))
+            end = min(end, size - 1)
+            if start > end:
+                self.send_response(416)
+                self.send_header('Content-Range', 'bytes */%d' % size)
+                self.end_headers()
+                return
+            code = 206
+        self.send_response(code)
+        self.send_header('Content-Type', 'video/mp4' if name.endswith('.mp4')
+                         else 'video/x-msvideo')
+        self.send_header('Accept-Ranges', 'bytes')
+        self.send_header('Content-Length', str(end - start + 1))
+        if code == 206:
+            self.send_header('Content-Range',
+                             'bytes %d-%d/%d' % (start, end, size))
+        if 'download=1' in self.path:
+            self.send_header('Content-Disposition',
+                             'attachment; filename="lantern-%s"' % name)
+        self.end_headers()
+        try:
+            with open(f, 'rb') as fh:
+                fh.seek(start)
+                left = end - start + 1
+                while left > 0:
+                    chunk = fh.read(min(65536, left))
+                    if not chunk:
+                        break
+                    self.wfile.write(chunk)
+                    left -= len(chunk)
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            pass
 
     def _sse(self):
         self.send_response(200)
@@ -481,42 +568,64 @@ class Handler(BaseHTTPRequestHandler):
         except (BrokenPipeError, ConnectionResetError, OSError):
             pass
 
-    def _mjpeg(self):
-        if not S.video_available:
+    def _mjpeg(self, cam_name):
+        cam = CAMS.get(cam_name)
+        if cam is None or not media.available():
             return self._send(503, {'error': 'video unavailable'})
         self.send_response(200)
         self.send_header('Content-Type',
                          'multipart/x-mixed-replace; boundary=frame')
         self.send_header('Cache-Control', 'no-store')
         self.end_headers()
-        with S.lock:
-            S.viewers += 1
+        with cam.lock:
+            cam.viewers += 1
         last = -1
         try:
             while True:
-                with S.lock:
-                    fid, frame = S.frame_id, S.frame
+                with cam.lock:
+                    fid, frame = cam.jpeg_id, cam.jpeg
                 if frame is not None and fid != last:
                     last = fid
                     self.wfile.write(b'--frame\r\nContent-Type: image/jpeg\r\n'
                                      b'Content-Length: %d\r\n\r\n' % len(frame)
                                      + frame + b'\r\n')
                     self.wfile.flush()
-                time.sleep(0.05)
+                time.sleep(0.03)
         except (BrokenPipeError, ConnectionResetError, OSError):
             pass
         finally:
-            with S.lock:
-                S.viewers -= 1
+            with cam.lock:
+                cam.viewers -= 1
+
+    def _key_ok(self, req):
+        return bool(UI_KEY) and hmac.compare_digest(
+            str(req.get('key', '')).encode(), UI_KEY.encode())
 
     def do_POST(self):
-        if self.path != '/api/action':
-            return self._send(404, {'error': 'not found'})
         try:
             n = int(self.headers.get('Content-Length', 0))
             req = json.loads(self.rfile.read(min(n, 4096)) or b'{}')
         except Exception:
             return self._send(400, {'error': 'bad request'})
+        path = self.path.split('?')[0]
+        if path == '/api/record':
+            return self._record(req)
+        if path == '/api/recordings/delete':
+            if not self._key_ok(req):
+                return self._send(403, {'error': 'wrong or missing access key'})
+            try:
+                REC.delete(req.get('name'))
+            except Exception as e:
+                return self._send(400, {'error': str(e)})
+            return self._send(200, {'ok': True})
+        if path == '/api/settings':
+            if not self._key_ok(req):
+                return self._send(403, {'error': 'wrong or missing access key'})
+            REC.set_settings(**{k: req[k] for k in ('auto_record', 'auto_cam')
+                                if k in req})
+            return self._send(200, {'ok': True, 'settings': REC.settings})
+        if path != '/api/action':
+            return self._send(404, {'error': 'not found'})
         action = req.get('action')
         targets = {'restart_vision': SERVICES['vision'],
                    'restart_agent': SERVICES['agent']}
@@ -544,6 +653,23 @@ class Handler(BaseHTTPRequestHandler):
                                           'timeout') or 'failed'})
 
 
+def _record(self, req):
+    cam, action = req.get('cam'), req.get('action')
+    try:
+        if action == 'start':
+            name = REC.start(cam)
+        elif action == 'stop':
+            name = REC.stop(cam)
+        else:
+            return self._send(400, {'error': 'unknown action'})
+    except Exception as e:
+        return self._send(400, {'error': str(e)})
+    return self._send(200, {'ok': True, 'name': name})
+
+
+Handler._record = _record
+
+
 def main():
     global ARGS
     p = argparse.ArgumentParser()
@@ -559,6 +685,8 @@ def main():
         threading.Thread(target=health_loop, daemon=True).start()
         with S.lock:
             S.event('Lantern Control started')
+    global REC
+    REC = media.Recorder(CAMS, lambda text, level='info': S.event(text, level))
     threading.Thread(target=snapshot_loop, daemon=True).start()
 
     srv = ThreadingHTTPServer((ARGS.host, ARGS.port), Handler)

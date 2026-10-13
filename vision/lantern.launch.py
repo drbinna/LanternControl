@@ -2,7 +2,8 @@
 import os
 
 from launch import LaunchDescription
-from launch.actions import ExecuteProcess
+from launch.actions import DeclareLaunchArgument, ExecuteProcess
+from launch.substitutions import LaunchConfiguration
 from launch_ros.actions import ComposableNodeContainer, Node
 from launch_ros.descriptions import ComposableNode
 
@@ -16,7 +17,10 @@ def generate_launch_description():
         parameters=[{
             'enable_infra1': True,
             'enable_infra2': True,
-            'enable_color': False,
+            # Colour camera for the operator view / recordings only; VSLAM
+            # uses the IR pair. Disable with: ros2 launch ... color:=false
+            'enable_color': LaunchConfiguration('color'),
+            'rgb_camera.color_profile': '640x360x15',
             'enable_depth': False,
             'depth_module.emitter_enabled': 0,      # IR dots confuse VSLAM
             'depth_module.infra_profile': '640x360x90',
@@ -54,4 +58,6 @@ def generate_launch_description():
         cmd=['python3', os.path.join(HERE, 'vslam_to_px4.py')],
         output='screen', respawn=True, respawn_delay=1.0)
 
-    return LaunchDescription([camera, container, bridge])
+    return LaunchDescription([
+        DeclareLaunchArgument('color', default_value='true'),
+        camera, container, bridge])

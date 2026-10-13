@@ -14,6 +14,7 @@ MAP=(
   "vision/vslam_to_px4.py:$APP/vslam_to_px4.py"
   "ui/lantern_ui.py:$APP/ui/lantern_ui.py"
   "ui/index.html:$APP/ui/index.html"
+  "ui/media.py:$APP/ui/media.py"
   "systemd/microxrceagent.service:$SYSD/microxrceagent.service"
   "systemd/lantern-vision.service:$SYSD/lantern-vision.service"
   "systemd/lantern-ui.service:$SYSD/lantern-ui.service"
@@ -55,7 +56,16 @@ for m in "${MAP[@]}"; do
   echo "   updated $dst"
   CHANGED="$CHANGED $dst"
 done
-python3 -m py_compile "$APP/vslam_to_px4.py" "$APP/lantern.launch.py" "$APP/ui/lantern_ui.py"
+python3 -m py_compile "$APP/vslam_to_px4.py" "$APP/lantern.launch.py" "$APP/ui/lantern_ui.py" "$APP/ui/media.py"
+mkdir -p "$APP/data/recordings"
+
+echo "==> Video tools"
+if ! command -v ffmpeg >/dev/null; then
+  sudo apt-get install -y ffmpeg >/dev/null 2>&1 && echo "   installed ffmpeg" \
+    || echo "   WARNING: could not install ffmpeg (no internet?) - recordings will be AVI downloads only"
+else
+  echo "   ffmpeg present"
+fi
 
 echo "==> Dashboard access key"
 sudo mkdir -p /etc/lantern

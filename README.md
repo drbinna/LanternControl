@@ -27,7 +27,7 @@ D455 (IR stereo, 90 Hz) ──► Isaac ROS Visual SLAM ──► bridge + watch
 |---|---|
 | `vision/lantern.launch.py` | Starts the camera, the VSLAM node and the bridge (the bridge restarts itself if it stops) |
 | `vision/vslam_to_px4.py` | Converts SLAM odometry to PX4 axes (FLU→FRD) and runs the **vision watchdog** |
-| `ui/` | Lantern Control dashboard (Python standard library + rclpy, no other dependencies) |
+| `ui/` | Lantern Control dashboard: `lantern_ui.py` (server), `media.py` (camera streams and recordings), `index.html` |
 | `systemd/` | Boot services: `microxrceagent`, `lantern-vision`, `lantern-ui` |
 | `tools/lantern-status` | Terminal health check |
 | `install.sh` | Installs or updates everything on the Jetson |
@@ -62,6 +62,17 @@ Open `http://<jetson-ip>:8080` from any browser on the same network. It shows:
 - battery and Jetson stats
 - an event log
 - restart buttons, which are locked while armed and need the access key (`sudo cat /etc/lantern/ui.env`)
+
+### Cameras and recordings
+
+The dashboard has three screens: **Flight**, **Cameras** and **Recordings**.
+
+- **Cameras** shows the D455 colour camera (640×360, 15 fps) next to the infrared camera that the tracking uses. Each camera is only streamed while someone is watching or recording it.
+- **Record** saves a video with time, mode, armed state, height and vision state written into the top of the picture.
+- **Auto-record** (on by default) records the colour camera from arm to disarm on every flight. It needs the access key to switch on or off.
+- Recordings are stored in `~/lantern/data/recordings/`. Each file is limited to 30 minutes, recording stops if the disk gets low, and a recording cut off by a crash or power loss is finished on the next boot.
+- Each recording is saved as MJPEG first, then converted to H.264 MP4 in the background so it plays in any browser. Deleting a recording needs the access key.
+- To turn the colour camera off: `ros2 launch ... color:=false`.
 
 ## Vision watchdog
 
