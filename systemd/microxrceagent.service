@@ -1,0 +1,12 @@
+[Unit]
+Description=Micro XRCE-DDS Agent (Jetson <-> Pixhawk over Ethernet)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/snap/bin/micro-xrce-dds-agent udp4 -p 8888
+Restart=always
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

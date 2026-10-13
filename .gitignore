@@ -1,0 +1,12 @@
+# secrets
+.env
+.env.*
+secrets.*
+*.pem
+*.key
+ui.env
+# python / editor
+__pycache__/
+*.pyc
+*.bak
+.DS_Store

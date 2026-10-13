@@ -1,0 +1,16 @@
+[Unit]
+Description=Lantern vision (D455 + Isaac VSLAM + PX4 bridge/watchdog)
+After=network-online.target microxrceagent.service
+Wants=network-online.target
+
+[Service]
+User=lantern
+# Wait up to 60 s for the D455 to enumerate on USB
+ExecStartPre=/bin/bash -c 'for i in $(seq 60); do lsusb -d 8086:0b5c >/dev/null && exit 0; sleep 1; done; echo "D455 not found"; exit 1'
+ExecStart=/bin/bash -c 'source /opt/ros/humble/setup.bash && source /home/lantern/lantern_ws/install/setup.bash && exec ros2 launch /home/lantern/lantern/lantern.launch.py'
+Restart=always
+RestartSec=5
+KillSignal=SIGINT
+
+[Install]
+WantedBy=multi-user.target

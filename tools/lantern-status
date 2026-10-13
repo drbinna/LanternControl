@@ -1,0 +1,30 @@
+#!/bin/bash
+# Quick health check of the Lantern vision chain.
+G='\e[32m'; R='\e[31m'; Y='\e[33m'; N='\e[0m'
+ok()  { echo -e "  ${G}✓${N} $1"; }
+bad() { echo -e "  ${R}✗${N} $1"; }
+source /opt/ros/humble/setup.bash 2>/dev/null
+source /home/lantern/lantern_ws/install/setup.bash 2>/dev/null
+
+echo "Lantern status"
+lsusb -d 8086:0b5c >/dev/null && ok "D455 camera on USB" || bad "D455 camera not detected"
+ping -c1 -W1 192.168.0.3 >/dev/null && ok "Pixhawk reachable (192.168.0.3)" || bad "Pixhawk not reachable"
+for s in microxrceagent lantern-vision lantern-ui; do
+  systemctl is-active --quiet $s && ok "$s running" || bad "$s not running"
+done
+HZ=$(timeout 5 ros2 topic hz /visual_slam/tracking/odometry 2>/dev/null | awk '/average rate/{print $3; exit}')
+[ -n "$HZ" ] && ok "SLAM output ${HZ} Hz" || bad "no SLAM output"
+WD=$(timeout 3 ros2 topic echo --once /lantern/vision_health 2>/dev/null | grep -o '"state": "[A-Z]*"' | cut -d'"' -f4)
+case "$WD" in
+  OK) ok "watchdog OK";;
+  "") bad "watchdog not reporting";;
+  *)  bad "watchdog $WD";;
+esac
+EV=$(timeout 3 ros2 topic echo --once --qos-reliability best_effort /fmu/out/estimator_status_flags 2>/dev/null | awk '/cs_ev_pos/{print $2; exit}')
+case "$EV" in
+  true)  ok "PX4 fusing vision";;
+  false) bad "PX4 NOT fusing vision";;
+  *)     echo -e "  ${Y}?${N} PX4 fusion flags not available (check dashboard)";;
+esac
+IP=$(ip route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}')
+echo "Dashboard: http://${IP:-<jetson-ip>}:8080"

@@ -1,0 +1,16 @@
+[Unit]
+Description=Lantern Control dashboard (web UI on port 8080)
+After=network-online.target microxrceagent.service
+Wants=network-online.target
+
+[Service]
+User=lantern
+EnvironmentFile=-/etc/lantern/ui.env
+ExecStart=/bin/bash -c 'source /opt/ros/humble/setup.bash && source /home/lantern/lantern_ws/install/setup.bash && exec python3 /home/lantern/lantern/ui/lantern_ui.py --port 8080'
+Restart=always
+RestartSec=3
+# Lower priority than the flight-critical vision stack
+Nice=10
+
+[Install]
+WantedBy=multi-user.target
