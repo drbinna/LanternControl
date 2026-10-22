@@ -15,10 +15,14 @@ MAP=(
   "ui/lantern_ui.py:$APP/ui/lantern_ui.py"
   "ui/index.html:$APP/ui/index.html"
   "ui/media.py:$APP/ui/media.py"
+  "perception/lantern_detect.py:$APP/perception/lantern_detect.py"
+  "perception/tracker.py:$APP/perception/tracker.py"
   "systemd/microxrceagent.service:$SYSD/microxrceagent.service"
   "systemd/lantern-vision.service:$SYSD/lantern-vision.service"
   "systemd/lantern-ui.service:$SYSD/lantern-ui.service"
+  "systemd/lantern-perception.service:$SYSD/lantern-perception.service"
   "tools/lantern-status:/usr/local/bin/lantern-status"
+  "tools/lantern-perception-setup:/usr/local/bin/lantern-perception-setup"
 )
 
 if [ $CHECK = 1 ]; then
@@ -40,7 +44,7 @@ fi
 
 STAMP=$(date +%Y%m%d-%H%M%S)
 BACKUP="$APP/backups/$STAMP"
-mkdir -p "$BACKUP" "$APP/ui"
+mkdir -p "$BACKUP" "$APP/ui" "$APP/perception" "$APP/models"
 echo "==> Backing up current files to $BACKUP"
 
 CHANGED=""
@@ -56,7 +60,8 @@ for m in "${MAP[@]}"; do
   echo "   updated $dst"
   CHANGED="$CHANGED $dst"
 done
-python3 -m py_compile "$APP/vslam_to_px4.py" "$APP/lantern.launch.py" "$APP/ui/lantern_ui.py" "$APP/ui/media.py"
+python3 -m py_compile "$APP/vslam_to_px4.py" "$APP/lantern.launch.py" "$APP/ui/lantern_ui.py" "$APP/ui/media.py" \
+  "$APP/perception/lantern_detect.py" "$APP/perception/tracker.py"
 mkdir -p "$APP/data/recordings"
 
 echo "==> Video tools"
@@ -77,19 +82,28 @@ else
   echo "   existing key kept (sudo cat /etc/lantern/ui.env)"
 fi
 sudo chmod 600 /etc/lantern/ui.env
-echo 'lantern ALL=(root) NOPASSWD: /usr/bin/systemctl restart lantern-vision, /usr/bin/systemctl restart microxrceagent' \
+echo 'lantern ALL=(root) NOPASSWD: /usr/bin/systemctl restart lantern-vision, /usr/bin/systemctl restart microxrceagent, /usr/bin/systemctl restart lantern-perception' \
   | sudo tee /etc/sudoers.d/lantern-ui >/dev/null
 sudo chmod 440 /etc/sudoers.d/lantern-ui
 sudo visudo -cf /etc/sudoers.d/lantern-ui >/dev/null
 
 echo "==> Services"
 sudo systemctl daemon-reload
-sudo systemctl enable microxrceagent lantern-vision lantern-ui >/dev/null 2>&1
+sudo systemctl enable microxrceagent lantern-vision lantern-ui lantern-perception >/dev/null 2>&1
 # Only restart what actually changed (restarting vision resets the SLAM origin).
 echo "$CHANGED" | grep -q microxrceagent && sudo systemctl restart microxrceagent && echo "   restarted microxrceagent"
 echo "$CHANGED" | grep -qE "lantern.launch|vslam_to_px4|lantern-vision" && sudo systemctl restart lantern-vision && echo "   restarted lantern-vision"
 echo "$CHANGED" | grep -qE "/ui/|lantern-ui" && sudo systemctl restart lantern-ui && echo "   restarted lantern-ui"
+# detection is separate from flight: restarting it never touches SLAM
+echo "$CHANGED" | grep -qE "/perception/|lantern-perception" && sudo systemctl restart lantern-perception && echo "   restarted lantern-perception"
 [ -z "$CHANGED" ] && echo "   nothing changed"
+
+echo "==> Object detection"
+if ls "$APP"/models/*.engine "$APP"/models/*.pt >/dev/null 2>&1; then
+  echo "   model present: $(cd "$APP/models" && ls *.engine *.pt 2>/dev/null | tr '\n' ' ')"
+else
+  echo "   no model yet - run once (needs internet, takes a few minutes): lantern-perception-setup"
+fi
 
 IP=$(ip route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src") print $(i+1)}')
 echo

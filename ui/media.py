@@ -70,6 +70,41 @@ def draw_overlay(img, text):
     return img
 
 
+# box colours (BGR): people amber, vehicles blue, anything else grey
+DET_COLORS = {'person': (36, 165, 245), 'car': (255, 169, 90),
+              'truck': (255, 169, 90), 'bus': (255, 169, 90),
+              'motorcycle': (255, 169, 90), 'bicycle': (255, 169, 90)}
+
+
+def draw_detections(img, det):
+    """Draw tracked objects from /lantern/detections onto a BGR frame."""
+    tracks = (det or {}).get('tracks') or []
+    if not tracks or img.ndim != 3:
+        return img
+    img = img.copy()
+    h, w = img.shape[:2]
+    sx = w / float(det.get('w') or w)
+    sy = h / float(det.get('h') or h)
+    th = max(1, int(round(h / 240)))
+    fs = max(0.35, h / 900.0)
+    for t in tracks:
+        x1, y1, x2, y2 = t['box']
+        p1 = (int(x1 * sx), int(y1 * sy))
+        p2 = (int(x2 * sx), int(y2 * sy))
+        col = DET_COLORS.get(t.get('label'), (200, 200, 200))
+        cv2.rectangle(img, p1, p2, col, th, cv2.LINE_AA)
+        text = '%s %d  %d%%' % (t.get('label', '?'), t['id'],
+                                round(100 * t.get('conf', 0)))
+        (tw, tht), base = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX,
+                                          fs, 1)
+        ty = p1[1] - 4 if p1[1] - tht - 6 > 0 else p2[1] + tht + 6
+        cv2.rectangle(img, (p1[0], ty - tht - 4), (p1[0] + tw + 6, ty + 3),
+                      col, -1)
+        cv2.putText(img, text, (p1[0] + 3, ty), cv2.FONT_HERSHEY_SIMPLEX,
+                    fs, (12, 13, 16), 1, cv2.LINE_AA)
+    return img
+
+
 class Recording:
     def __init__(self, cam):
         self.cam = cam
@@ -117,6 +152,7 @@ class Camera:
         self.rec = None
         self.last_view = self.last_rec = self.last_frame = 0.0
         self.overlay = lambda: ''
+        self.decorate = None     # optional img -> img (detection boxes)
 
     def wanted(self):
         return self.viewers > 0 or self.rec is not None
@@ -136,6 +172,11 @@ class Camera:
         img = get_img()
         if img is None:
             return
+        if self.decorate is not None:
+            try:
+                img = self.decorate(img)
+            except Exception:
+                pass
         if view:
             self.last_view = now
             ok, jpg = cv2.imencode('.jpg', img, [cv2.IMWRITE_JPEG_QUALITY, 75])

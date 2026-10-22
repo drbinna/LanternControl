@@ -142,6 +142,19 @@ main{padding:16px 20px 28px;max-width:1500px;margin:0 auto}
 .recbtn:disabled{opacity:.4;cursor:not-allowed}
 .rtime{font-family:var(--mono);font-size:13px;color:#ffc9c9}
 .hint{color:var(--faint);font-size:12px;margin-top:8px}
+/* ---- detection */
+.dstate{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--dim)}
+.dstate i{width:8px;height:8px;border-radius:50%;background:var(--faint);flex:none}
+.dstate.ok i{background:var(--ok);box-shadow:0 0 8px var(--ok)}
+.dstate.bad i{background:var(--bad)}
+.dcounts{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.dcount{font-family:var(--mono);font-size:12px;padding:3px 9px;border-radius:5px;background:var(--panel2);color:var(--text)}
+.dcount b{color:#ffe0a8;font-weight:700;margin-right:4px}
+.dlist{margin-top:8px;max-height:180px;overflow:auto;font-family:var(--mono);font-size:12px}
+.drow{display:grid;grid-template-columns:auto 1fr auto auto;gap:10px;padding:5px 0;border-top:1px solid var(--line)}
+.drow:first-child{border-top:0}
+.drow .id{color:var(--faint)} .drow .c{color:var(--dim)}
+.drow .sw{width:8px;height:8px;border-radius:2px;margin-top:4px}
 
 /* ---- recordings */
 .player{background:#07080a;border-radius:8px;overflow:hidden;aspect-ratio:16/9;display:grid;place-items:center}
@@ -270,6 +283,7 @@ main{padding:16px 20px 28px;max-width:1500px;margin:0 auto}
       <div class="btns">
         <button class="btn" data-action="restart_vision">Restart vision <span>camera + SLAM + bridge</span></button>
         <button class="btn" data-action="restart_agent">Restart DDS agent <span>Jetson ↔ Pixhawk</span></button>
+        <button class="btn" data-action="restart_perception">Restart detection <span>object detection only</span></button>
       </div>
       <div class="msg" id="ctrlMsg"></div>
     </section>
@@ -295,6 +309,13 @@ main{padding:16px 20px 28px;max-width:1500px;margin:0 auto}
           <button class="recbtn" data-cam="ir">Record</button>
           <span class="rtime" id="rtIr"></span>
         </div>
+      </section>
+      <section class="card">
+        <h2>Objects <span class="r" id="detPerf"></span></h2>
+        <div class="dstate" id="detState"><i></i><span id="detTxt">Waiting…</span></div>
+        <div class="dcounts" id="detCounts"></div>
+        <div class="dlist" id="detList"></div>
+        <div class="hint">Boxes are drawn on the colour camera and burned into its recordings. Detection runs separately from flight: stopping it never affects positioning.</div>
       </section>
       <section class="card">
         <h2>Recording</h2>
@@ -558,9 +579,30 @@ function renderMedia(s){
     btn.disabled = !s.video;
     $(rt).textContent = r ? fmtDur(r.elapsed) : '';
   });
+  renderDetections(s.perception);
   // refresh the list when a recording starts/stops
   const keys = names.join(',');
   if (keys !== lastRecKeys){ lastRecKeys = keys; if (view === 'recordings') setTimeout(loadRecordings, 600); }
+}
+
+// ---- detection
+const DET_SW = {person:'var(--amber)', car:'var(--blue)', truck:'var(--blue)', bus:'var(--blue)', motorcycle:'var(--blue)', bicycle:'var(--blue)'};
+const DET_TXT = {RUNNING:'Detecting', LOADING:'Loading model…', NO_MODEL:'No model', NO_CAMERA:'No colour camera', ERROR:'Error', OFF:'Not running', STOPPED:'Service stopped'};
+const esc = t => String(t ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+function renderDetections(p){
+  if (!p) return;
+  const run = p.state === 'RUNNING';
+  $('detState').className = 'dstate ' + (run ? 'ok' : (p.state === 'LOADING' ? '' : 'bad'));
+  $('detTxt').textContent = (DET_TXT[p.state] || p.state) + (p.reason && !run ? ' · ' + p.reason : '');
+  $('detPerf').textContent = run ? fmt(p.fps,0) + ' fps · ' + fmt(p.infer_ms,0) + ' ms' : '';
+  const c = Object.entries(p.counts || {});
+  $('detCounts').innerHTML = run
+    ? (c.length ? c.map(([k,n]) => `<span class="dcount"><b>${n}</b>${esc(k)}</span>`).join('') : '<span class="empty">Nothing in view</span>')
+    : '';
+  $('detList').innerHTML = (p.tracks || []).map(t =>
+    `<div class="drow"><span class="sw" style="background:${DET_SW[t.label] || 'var(--dim)'}"></span>
+     <span>${esc(t.label)} <span class="id">#${t.id}</span></span>
+     <span class="c">${Math.round((t.conf||0)*100)}%</span><span class="c">${fmt(t.age,0)} s</span></div>`).join('');
 }
 
 const keyVal = () => $('key').value;
