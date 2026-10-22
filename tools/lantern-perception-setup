@@ -30,9 +30,13 @@ python3 -c "import tensorrt; print('  tensorrt', tensorrt.__version__)" 2>/dev/n
 
 echo "==> Ultralytics"
 if ! python3 -c "import ultralytics" 2>/dev/null; then
-  pip3 install --user "ultralytics" "onnx" "onnxslim"
+  # numpy<2: ROS Humble's OpenCV/cv_bridge on Ubuntu 22.04 are built for NumPy 1.x
+  pip3 install --user "ultralytics" "onnx" "onnxslim" "numpy<2"
 fi
+pip3 install --user -q "numpy<2"
 python3 -c "import ultralytics; print('  ultralytics', ultralytics.__version__)"
+python3 -c "import cv2, numpy; print('  opencv', cv2.__version__, '· numpy', numpy.__version__)" || {
+  echo -e "  ${R}✗${N} OpenCV broke after installing ultralytics - paste this output to Claude."; exit 1; }
 # make sure pip didn't swap the Jetson torch for a CPU build
 python3 -c "import torch, sys; sys.exit(0 if torch.cuda.is_available() else 1)" || {
   echo -e "  ${R}✗${N} torch lost CUDA after installing ultralytics - reinstall the Jetson torch wheel."; exit 1; }
