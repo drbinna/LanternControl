@@ -9,7 +9,7 @@ source /home/lantern/lantern_ws/install/setup.bash 2>/dev/null
 echo "Lantern status"
 lsusb -d 8086:0b5c >/dev/null && ok "D455 camera on USB" || bad "D455 camera not detected"
 ping -c1 -W1 192.168.0.3 >/dev/null && ok "Pixhawk reachable (192.168.0.3)" || bad "Pixhawk not reachable"
-for s in microxrceagent lantern-vision lantern-ui; do
+for s in microxrceagent lantern-vision lantern-ui lantern-perception; do
   systemctl is-active --quiet $s && ok "$s running" || bad "$s not running"
 done
 HZ=$(timeout 5 ros2 topic hz /visual_slam/tracking/odometry 2>/dev/null | awk '/average rate/{print $3; exit}')
@@ -19,6 +19,12 @@ case "$WD" in
   OK) ok "watchdog OK";;
   "") bad "watchdog not reporting";;
   *)  bad "watchdog $WD";;
+esac
+DET=$(timeout 3 ros2 topic echo --once /lantern/detections 2>/dev/null | grep -o '"state": "[A-Z_]*"' | cut -d'"' -f4)
+case "$DET" in
+  RUNNING) ok "object detection running";;
+  "")      echo -e "  ${Y}?${N} object detection not reporting (not needed for flight)";;
+  *)       echo -e "  ${Y}!${N} object detection $DET (not needed for flight)";;
 esac
 EV=$(timeout 3 ros2 topic echo --once --qos-reliability best_effort /fmu/out/estimator_status_flags 2>/dev/null | awk '/cs_ev_pos/{print $2; exit}')
 case "$EV" in

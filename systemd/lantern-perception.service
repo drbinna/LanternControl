@@ -1,0 +1,20 @@
+[Unit]
+Description=Lantern perception (object detection + tracking on the colour camera)
+# Not flight-critical: reads the colour camera only, never talks to PX4.
+After=lantern-vision.service
+Wants=lantern-vision.service
+
+[Service]
+User=lantern
+EnvironmentFile=-/etc/lantern/perception.env
+ExecStart=/bin/bash -c 'source /opt/ros/humble/setup.bash && source /home/lantern/lantern_ws/install/setup.bash && exec python3 /home/lantern/lantern/perception/lantern_detect.py'
+Restart=always
+RestartSec=5
+KillSignal=SIGINT
+TimeoutStopSec=10
+# Always yields to the vision stack (VSLAM -> PX4) for CPU
+Nice=10
+CPUWeight=20
+
+[Install]
+WantedBy=multi-user.target

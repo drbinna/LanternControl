@@ -9,6 +9,9 @@ the Jetson shows the whole chain live.
 D455 (IR stereo, 90 Hz) ──► Isaac ROS Visual SLAM ──► bridge + watchdog ──► uXRCE-DDS ──► PX4 EKF2
                                                             │                 (Ethernet)
                                                             └──► /lantern/vision_health ──► dashboard :8080
+
+D455 colour (15 fps) ──► YOLO (TensorRT) ──► tracker ──► /lantern/detections ──► dashboard :8080
+                         (separate service, not part of flight)
 ```
 
 ## Hardware
@@ -27,11 +30,15 @@ D455 (IR stereo, 90 Hz) ──► Isaac ROS Visual SLAM ──► bridge + watch
 |---|---|
 | `vision/lantern.launch.py` | Starts the camera, the VSLAM node and the bridge (the bridge restarts itself if it stops) |
 | `vision/vslam_to_px4.py` | Converts SLAM odometry to PX4 axes (FLU→FRD) and runs the **vision watchdog** |
+| `perception/lantern_detect.py` | Object detection + tracking on the colour camera (its own service, never talks to PX4) |
+| `perception/tracker.py` | Multi-object tracker (Kalman + IoU matching), numpy only |
 | `ui/` | Lantern Control dashboard: `lantern_ui.py` (server), `media.py` (camera streams and recordings), `index.html` |
-| `systemd/` | Boot services: `microxrceagent`, `lantern-vision`, `lantern-ui` |
+| `systemd/` | Boot services: `microxrceagent`, `lantern-vision`, `lantern-ui`, `lantern-perception` |
 | `tools/lantern-status` | Terminal health check |
+| `tools/lantern-perception-setup` | One-time: installs Ultralytics, downloads YOLO, builds the TensorRT engine |
 | `install.sh` | Installs or updates everything on the Jetson |
 | `tests/test_watchdog.py` | Offline watchdog test (no ROS needed): `python3 tests/test_watchdog.py` |
+| `tests/test_tracker.py` | Offline tracker test (no ROS, no GPU): `python3 tests/test_tracker.py` |
 
 ## Install / update on the Jetson
 
@@ -61,7 +68,7 @@ Open `http://<jetson-ip>:8080` from any browser on the same network. It shows:
 - the IR camera feed
 - battery and Jetson stats
 - an event log
-- restart buttons, which are locked while armed and need the access key (`sudo cat /etc/lantern/ui.env`)
+- restart buttons (vision, DDS agent, detection), which are locked while armed and need the access key (`sudo cat /etc/lantern/ui.env`)
 
 ### Cameras and recordings
 
@@ -73,6 +80,52 @@ The dashboard has three screens: **Flight**, **Cameras** and **Recordings**.
 - Recordings are stored in `~/lantern/data/recordings/`. Each file is limited to 30 minutes, recording stops if the disk gets low, and a recording cut off by a crash or power loss is finished on the next boot.
 - Each recording is saved as MJPEG first, then converted to H.264 MP4 in the background so it plays in any browser. Deleting a recording needs the access key.
 - To turn the colour camera off: `ros2 launch ... color:=false`.
+
+## Object detection and tracking
+
+The colour camera is run through a YOLO detector on the Jetson GPU, and every
+object gets an ID that stays with it while it moves, is briefly hidden, or
+leaves and comes back within 1.5 s.
+
+- Reported by default: person, bicycle, car, motorcycle, bus, truck.
+- Shown on **Cameras**: boxes on the colour feed (also burned into colour
+  recordings) and an **Objects** card with counts, IDs, confidence and how
+  long each one has been tracked. New objects go in the event log.
+- Output for other code: `/lantern/detections` (JSON, one message per frame,
+  pixel boxes and velocities).
+
+**It is separate from flight.** It runs as `lantern-perception` at low CPU
+priority, only reads the colour camera and never talks to PX4. Stopping or
+restarting it does not touch SLAM or the vision watchdog.
+
+### First-time setup (on the Jetson, needs internet)
+
+```bash
+cd ~/LanternControl && git pull && ./install.sh
+lantern-perception-setup            # yolo11n, a few minutes
+```
+
+The setup needs the JetPack 6 build of PyTorch (a plain `pip install torch`
+won't use the GPU); it checks this and stops with instructions if it's
+missing. `lantern-perception-setup yolo11s` builds a larger, more accurate
+model.
+
+Settings go in `/etc/lantern/perception.env`, then
+`sudo systemctl restart lantern-perception`:
+
+| Variable | Default | |
+|---|---|---|
+| `LANTERN_MODEL` | `~/lantern/models/yolo11n.engine` | falls back to the `.pt` |
+| `LANTERN_CLASSES` | `person,bicycle,car,motorcycle,bus,truck` | any COCO labels |
+| `LANTERN_DETECT_FPS` | `15` | lower it to free GPU time |
+
+After setup, hover and check on the dashboard that **SLAM stays near 90 Hz**
+with detection running. If it drops, set `LANTERN_DETECT_FPS=8`.
+
+**Licence note:** Ultralytics YOLO is AGPL-3.0. Fine for research and
+demos; shipping it in a commercial product needs an Ultralytics licence or a
+different detector. The tracker is ours, and the detector sits behind one
+small class (`Detector` in `lantern_detect.py`), so it can be swapped.
 
 ## Vision watchdog
 

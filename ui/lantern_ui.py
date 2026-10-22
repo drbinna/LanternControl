@@ -29,7 +29,8 @@ import media  # noqa: E402
 
 PIXHAWK_IP = os.environ.get('LANTERN_PIXHAWK_IP', '192.168.0.3')
 CAMERA_USB = '8086:0b5c'
-SERVICES = {'agent': 'microxrceagent', 'vision': 'lantern-vision'}
+SERVICES = {'agent': 'microxrceagent', 'vision': 'lantern-vision',
+            'perception': 'lantern-perception'}
 UI_KEY = os.environ.get('LANTERN_UI_KEY', '')
 STALE_S = 1.5
 
@@ -82,12 +83,18 @@ class State:
         self.battery = {}
         self.battery_t = 0.0
         self.health = {'camera': None, 'pixhawk': None, 'agent': None,
-                       'vision': None, 'temp_c': None, 'load': None,
+                       'vision': None, 'perception': None,
+                       'temp_c': None, 'load': None,
                        'mem_pct': None}
         self.events = collections.deque(maxlen=40)
         self.snapshot = {}
         self.wd = {}
         self.wd_t = 0.0
+        self.det = {}                 # latest /lantern/detections
+        self.det_t = 0.0
+        self.det_seen = {}            # track id -> label, for the event log
+        self.det_ev_t = 0.0
+        self.det_pending = []
         self.prev_checks = {}
 
     def event(self, text, level='info'):
@@ -119,6 +126,47 @@ def overlay_text():
 
 for _c in CAMS.values():
     _c.overlay = overlay_text
+
+
+def fresh_detections():
+    """Latest detections if recent enough to draw, else None."""
+    with S.lock:
+        if time.monotonic() - S.det_t < 0.5:
+            return S.det
+    return None
+
+
+CAMS['color'].decorate = lambda img: media.draw_detections(
+    img, fresh_detections())
+
+
+def on_detections(d):
+    """Store a /lantern/detections message and log new objects."""
+    now = time.monotonic()
+    with S.lock:
+        prev = S.det.get('state') if S.det else None
+        S.det, S.det_t = d, now
+        st = d.get('state')
+        if prev and st != prev:
+            if st == 'RUNNING':
+                S.event('Object detection running (%s)' % d.get('model', ''),
+                        'ok')
+            elif st in ('NO_MODEL', 'ERROR', 'NO_CAMERA'):
+                S.event('Object detection %s · %s' % (
+                    st.replace('_', ' ').lower(), d.get('reason', '')), 'bad')
+        for t in d.get('tracks') or []:
+            if t['id'] not in S.det_seen:
+                S.det_seen[t['id']] = t.get('label', '?')
+                S.det_pending.append('%s %d' % (t.get('label', '?'), t['id']))
+        if len(S.det_seen) > 500:            # long sessions: forget old ids
+            S.det_seen = dict(list(S.det_seen.items())[-200:])
+        # at most one "new object" line every 3 s, so a crowd can't flood it
+        if S.det_pending and now - S.det_ev_t > 3.0:
+            items = S.det_pending
+            S.det_pending, S.det_ev_t = [], now
+            text = ', '.join(items[:4]) + (' +%d more' % (len(items) - 4)
+                                           if len(items) > 4 else '')
+            S.event('New object: ' + text, 'info')
 
 
 # --------------------------------------------------------------------- ROS
@@ -170,6 +218,13 @@ def start_ros():
                 S.event('VISION LOST · %s' % d.get('last_loss', '?'), 'bad')
             S.wd, S.wd_t = d, time.monotonic()
     node.create_subscription(String, '/lantern/vision_health', on_wd, 10)
+
+    def on_det(msg):
+        try:
+            on_detections(json.loads(msg.data))
+        except ValueError:
+            pass
+    node.create_subscription(String, '/lantern/detections', on_det, 10)
 
     def on_bridge(msg):
         with S.lock:
@@ -267,7 +322,7 @@ def health_loop():
         r = run(['ping', '-c', '1', '-W', '1', PIXHAWK_IP])
         pixhawk = bool(r and r.returncode == 0)
         r = run(['systemctl', 'is-active'] + list(SERVICES.values()))
-        lines = (r.stdout.split() if r else []) + ['unknown'] * 2
+        lines = (r.stdout.split() if r else []) + ['unknown'] * 3
         temps = []
         for z in Path('/sys/class/thermal').glob('thermal_zone*/temp'):
             try:
@@ -290,6 +345,7 @@ def health_loop():
             S.health.update(camera=camera, pixhawk=pixhawk,
                             agent=lines[0] == 'active',
                             vision=lines[1] == 'active',
+                            perception=lines[2] == 'active',
                             temp_c=max(temps) if temps else None,
                             load=load, mem_pct=mem)
         time.sleep(2.0)
@@ -308,6 +364,7 @@ def build_snapshot():
         vpos = S.vision_pos if S.bridge.fresh() else None
         vo = S.vo_state
         wd = dict(S.wd) if time.monotonic() - S.wd_t < 2 else {}
+        det = dict(S.det) if time.monotonic() - S.det_t < 2 else {}
 
     tracking_ok = slam_hz > 30 and vo not in (2,)
     fusing = flags.get('cs_ev_pos') if flags else None
@@ -368,6 +425,21 @@ def build_snapshot():
     else:
         verdict, level = 'NOT READY · ' + failing[0][3], 'bad'
 
+    tracks = det.get('tracks') or []
+    counts = {}
+    for t in tracks:
+        counts[t.get('label', '?')] = counts.get(t.get('label', '?'), 0) + 1
+    perception = {
+        'state': det.get('state') or (
+            'STOPPED' if h.get('perception') is False else 'OFF'),
+        'reason': det.get('reason', '' if det else
+                          'lantern-perception service not reporting'),
+        'fps': det.get('fps', 0), 'infer_ms': det.get('infer_ms', 0),
+        'model': det.get('model', ''), 'counts': counts,
+        'tracks': [{k: t.get(k) for k in ('id', 'label', 'conf', 'age')}
+                   for t in tracks],
+    }
+
     with S.lock:
         events = list(S.events)
     return {
@@ -386,6 +458,7 @@ def build_snapshot():
         'cams': {n: {'label': c.label, 'live': c.live()}
                  for n, c in CAMS.items()},
         'recording': REC.status() if REC else {},
+        'perception': perception,
         'controls': bool(UI_KEY),
         'events': events,
     }
@@ -460,6 +533,18 @@ def demo_cams():
         col[..., 2] = 120
         cx = int(320 + 200 * math.sin(t))
         cv2.circle(col, (cx, 180), 40, (36, 165, 245), -1)
+        cv2.rectangle(col, (470, 230), (600, 320), (90, 90, 90), -1)
+        if n % 2 == 0:
+            on_detections({
+                'state': 'RUNNING', 'reason': '', 'w': 640, 'h': 360,
+                'fps': 15.0, 'infer_ms': 8.7, 'model': 'demo',
+                'tracks': [
+                    {'id': 1, 'label': 'person', 'conf': 0.91,
+                     'box': [cx - 44, 132, cx + 44, 232],
+                     'vel': [200 * math.cos(t), 0], 'age': round(t % 60, 1)},
+                    {'id': 2, 'label': 'car', 'conf': 0.78,
+                     'box': [466, 226, 604, 324], 'vel': [0, 0],
+                     'age': round(t % 60, 1)}]})
         ir = cv2.cvtColor(col, cv2.COLOR_BGR2GRAY)
         CAMS['color'].on_frame(lambda: col)
         if n % 2 == 0:
@@ -621,7 +706,8 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(404, {'error': 'not found'})
         action = req.get('action')
         targets = {'restart_vision': SERVICES['vision'],
-                   'restart_agent': SERVICES['agent']}
+                   'restart_agent': SERVICES['agent'],
+                   'restart_perception': SERVICES['perception']}
         if action not in targets:
             return self._send(400, {'error': 'unknown action'})
         if not UI_KEY or not hmac.compare_digest(
